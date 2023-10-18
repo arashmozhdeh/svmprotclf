@@ -4,6 +4,7 @@ import argparse
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import f1_score, recall_score, precision_score
 
 def get_3grams(seq):
     return [seq[i:i+3] for i in range(len(seq) - 2)]
@@ -54,7 +55,29 @@ if __name__ == "__main__":
     # SVM training
     clf = SVC()
     clf.fit(X_train, y_train)
-    predictions = clf.predict(X_test)
-    accuracy = accuracy_score(y_test, predictions)
+    # Metrics for training data
+    train_predictions = clf.predict(X_train)
+    train_accuracy = accuracy_score(y_train, train_predictions)
+    train_f1 = f1_score(y_train, train_predictions, average='macro')  # assuming a multi-class problem
+    train_recall = recall_score(y_train, train_predictions, average='macro')
+    train_precision = precision_score(y_train, train_predictions, average='macro')
 
-    print(f"Accuracy on test data: {accuracy:.4f}")
+    print(f"Metrics for Training Data:")
+    print(f"Accuracy: {train_accuracy:.4f}")
+    print(f"F1 Score: {train_f1:.4f}")
+    print(f"Recall: {train_recall:.4f}")
+    print(f"Precision: {train_precision:.4f}")
+    print("-"*50)
+
+    # Metrics for test data
+    test_predictions = clf.predict(X_test)
+    test_accuracy = accuracy_score(y_test, test_predictions)
+    test_f1 = f1_score(y_test, test_predictions, average='macro')
+    test_recall = recall_score(y_test, test_predictions, average='macro')
+    test_precision = precision_score(y_test, test_predictions, average='macro')
+
+    print(f"Metrics for Test Data:")
+    print(f"Accuracy: {test_accuracy:.4f}")
+    print(f"F1 Score: {test_f1:.4f}")
+    print(f"Recall: {test_recall:.4f}")
+    print(f"Precision: {test_precision:.4f}")
