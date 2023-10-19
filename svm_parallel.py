@@ -1,12 +1,11 @@
 import pandas as pd
 import numpy as np
 import argparse
+import concurrent.futures
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import f1_score, recall_score, precision_score
-import sys
-
 
 def get_3grams(seq):
     return [seq[i:i+3] for i in range(len(seq) - 2)]
@@ -22,63 +21,49 @@ def load_protvec(file_path):
     data = [line.strip('"').split('\t') for line in lines]
     return {item[0]: [float(val.replace('"', '')) for val in item[1:]] for item in data}
 
+def parallel_predict(clf, data, n_splits=24):
+    split_data = np.array_split(data, n_splits)
+    predictions = []
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=n_splits) as executor:
+        results = [executor.submit(clf.predict, chunk) for chunk in split_data]
+        for f in concurrent.futures.as_completed(results):
+            predictions.extend(f.result())
+    return predictions
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Protein classification')
     parser.add_argument('--shot_size', type=int, default=None, help='Number of samples per class for training. If None, use the whole dataset.')
     parser.add_argument("--train_path", default="./dataset/train_dataset.csv", type=str, help="Path to training dataset")
     parser.add_argument("--test_path", default="./dataset/test_dataset.csv", type=str, help="Path to test dataset")
     parser.add_argument('--protvec_path', default="./dataset/protVec_100d_3grams.csv", type=str, help='Path to the protVec embeddings')
-    print("Argument parsing started!")
-    sys.stdout.flush()
-    args = parser.parse_args()
-    print("Argument parsing finished")
-    sys.stdout.flush()
-    protvec_dict = load_protvec(args.protvec_path)
 
+    args = parser.parse_args()
+
+    protvec_dict = load_protvec(args.protvec_path)
     train_dataset = pd.read_csv(args.train_path)
     test_dataset = pd.read_csv(args.test_path)
-    print("Datasets loaded")
-    sys.stdout.flush()
-    # If shot_size is provided, sample based on shot size. Otherwise, use the whole dataset.
+
     if args.shot_size:
         train_dataset = train_dataset.groupby('Protein families').apply(lambda x: x.sample(min(len(x), args.shot_size))).reset_index(drop=True)
 
-    # Convert protein families to numbers
     le = LabelEncoder()
     train_dataset['Protein families'] = le.fit_transform(train_dataset['Protein families'])
     test_dataset['Protein families'] = le.transform(test_dataset['Protein families'])
-    print("Labels encoded")
+
     train_dataset['Vector'] = train_dataset['Sequence'].apply(lambda x: sequence_to_vector(x, protvec_dict))
     test_dataset['Vector'] = test_dataset['Sequence'].apply(lambda x: sequence_to_vector(x, protvec_dict))
 
     X_train = np.array(train_dataset['Vector'].tolist())
     y_train = train_dataset['Protein families']
-
     X_test = np.array(test_dataset['Vector'].tolist())
     y_test = test_dataset['Protein families']
-    print("Training started")
-    sys.stdout.flush()
-    # SVM training
+
     clf = SVC()
     clf.fit(X_train, y_train)
-    print("Training finished")
-    sys.stdout.flush()
-    # Metrics for training data
-    train_predictions = clf.predict(X_train)
-    train_accuracy = accuracy_score(y_train, train_predictions)
-    train_f1 = f1_score(y_train, train_predictions, average='macro')  # assuming a multi-class problem
-    train_recall = recall_score(y_train, train_predictions, average='macro')
-    train_precision = precision_score(y_train, train_predictions, average='macro')
-    sys.stdout.flush()
-    print(f"Metrics for Training Data:")
-    print(f"Accuracy: {train_accuracy:.4f}")
-    print(f"F1 Score: {train_f1:.4f}")
-    print(f"Recall: {train_recall:.4f}")
-    print(f"Precision: {train_precision:.4f}")
-    print("-"*50)
-    sys.stdout.flush()
-    # Metrics for test data
-    test_predictions = clf.predict(X_test)
+
+    test_predictions = parallel_predict(clf, X_test)
+
     test_accuracy = accuracy_score(y_test, test_predictions)
     test_f1 = f1_score(y_test, test_predictions, average='macro')
     test_recall = recall_score(y_test, test_predictions, average='macro')
@@ -89,4 +74,19 @@ if __name__ == "__main__":
     print(f"F1 Score: {test_f1:.4f}")
     print(f"Recall: {test_recall:.4f}")
     print(f"Precision: {test_precision:.4f}")
-    sys.stdout.flush()
+
+    print("-"*50)
+
+    train_predictions = parallel_predict(clf, X_train)
+
+    train_accuracy = accuracy_score(y_train, train_predictions)
+    train_f1 = f1_score(y_train, train_predictions, average='macro')
+    train_recall = recall_score(y_train, train_predictions, average='macro')
+    train_precision = precision_score(y_train, train_predictions, average='macro')
+
+    print(f"Metrics for Training Data:")
+    print(f"Accuracy: {train_accuracy:.4f}")
+    print(f"F1 Score: {train_f1:.4f}")
+    print(f"Recall: {train_recall:.4f}")
+    print(f"Precision: {train_precision:.4f}")
+
